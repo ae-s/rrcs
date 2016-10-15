@@ -1,0 +1,10 @@
+This is a tool called RRCS, Revised Revision Control System.
+
+GOALS:  This is intended to be a tool which -
+ - is completely compatible with existing ,v files,
+ - while being more automation-friendly than RCS,
+ - and with a user interface resembling that of git, with which many
+   people are already familiar.
+
+For now, I'm prototyping the git-like user interface with a
+shellscript, `./grcs'.

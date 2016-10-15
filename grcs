@@ -1,0 +1,74 @@
+#!/bin/bash
+
+set +x
+
+#TODO: proper arg parsing
+CMD=$1
+FN=$2
+
+# PRINCIPLES
+
+# In git, there are three places that the code lives.  There's a
+# repository, which is permanent; an index, which is a temporary
+# staging area, and a working tree, which is ephemeral.  RCS doesn't
+# have a concept of an index.  However, we can pretend to have one, by
+# branching from the most recent commit.
+
+# This script derives its indication of what's going on from the
+# lock(s) set on the repository.  There must be exactly 0 or 1 locks
+# set by the invoking user.
+LOCK=$( rlog -l foo | grep '	'$USER | cut -d\  -f2 )
+
+if [[ $LOCK =~ " " ]] ; then
+	echo "You can't use this script with more than one lock set\!"
+	exit 3
+fi
+
+# IF NO LOCKS ARE SET: development is happening on the highest commit
+# on trunk.  Check it out.
+if [[ $LOCK == "" ]] ; then
+	echo "on tip, no index"
+	rcs -q -l $FN
+	LOCK=$( rlog -l foo | grep "	$USER: " | cut -d\  -f2 )
+
+fi
+
+# The index branch, which hangs off of any commit, is numbered 1000.
+if [[ $LOCK = *.1000.* ]] ; then
+	# If a commit on that branch is locked, it indicates that we are
+	# working in the index.
+	BRANCH=${LOCK%.*.1000.*}
+	HEAD=${LOCK%.1000.*}
+else
+	# Otherwise, the index has not yet been created and we are
+	# presently editing the head.
+	BRANCH=${LOCK%.*}
+	HEAD=$LOCK
+fi
+
+# Name the index branch, whether it exists or not
+rcs -q -nINDEX $FN
+rcs -q -nINDEX:$HEAD.1000 $FN
+
+case $CMD in
+	(add)
+		ci -q -m'update index' -l -rINDEX $FN
+		;;
+	(commit)
+		# save un-staged changes off to the side
+		mv "$FN" "$FN"_working
+		co -l -rINDEX $FN
+		# lock the head; index may already be implicitly locked
+		rcs -q -l$HEAD $FN
+		# migrate changes from the index branch
+		rcsmerge -q -r$HEAD -rINDEX $FN
+		# check in over the head, retaining its lock
+		ci -l -r$BRANCH $FN
+		# unlock the index
+		rcs -q -uINDEX $FN
+		# delete the index nametag
+		rcs -q -nINDEX $FN
+		# re-get the un-staged changes
+		mv "$FN"_working "$FN"
+		;;
+esac
